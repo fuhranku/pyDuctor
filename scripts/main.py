@@ -5,7 +5,9 @@
 """
 
 #Built-in Python imports
-import wave, os
+import wave
+import os
+import platform
 from subprocess import Popen
 
 #Python Audio Auxiliary Library - MIT CSAIL pyAudio
@@ -15,59 +17,87 @@ import pyaudio
 import Leap
 
 #pyDuctor Modules
-import trackPointer
-import Left
+import tracker
 
 #Variables
-def CHUNK():
-    return 4096
+CHUNK = 4096
 
-devnull = open(os.devnull, 'wb')
 
-Popen(['C:\Program Files (x86)\Leap Motion\Core Services\VisualizerApp.exe'], stdout=devnull, stderr=devnull)
+def simulator(devnull, log=False):
+    """         Runs the LeapMotion Hand Simulator
+    :param      operating_system: String that represents the operating system version
+    :return:    None
+    """
+    if log:
+        print("pyDuctor - Loading Visualizer on:", platform.system())
+    if "Windows" in platform.system():
+        Popen(['C:\Program Files (x86)\Leap Motion\Core Services\VisualizerApp.exe'],
+              stdout=devnull,
+              stderr=devnull)
+    else:
+        pass
 
-controller = Leap.Controller()
+def set_volume(volume, devnull, log=False):
+    """             Sets the volume of the computer to the specified parameter
+    :param volume:  Value from 1-12 to set the volume
+    :return:        None
+    """
+    if log:
+        print("Volume level:", str(volume))
+    Popen(['nircmd.exe', 'setsysvolume', str(volume*5461)],
+          stdout=devnull,
+          stderr=devnull)
 
-wv = wave.open("tdfw.wav", "rb")
 
-p = pyaudio.PyAudio()
+def wave_obj(filename):
+    """         Opens a given .wav file
+    :param      filename: The name of the file to open.
+    :return:    The wave object.
+    """
+    return wave.open(filename, "rb")
 
-frames_played = 0
 
-data = wv.readframes(CHUNK())
-frm = 0
-rt = wv.getframerate()
+def main(filename, log=False, simulate=False):
+    """                 The main function
+    :param filename:    The name of file to open
+    :param log:         Should I keep a log?
+    :param simulate:    Do you want the LeapMotion simulator?
+    :return:            None
+    """
+    devnull = open(os.devnull, 'wb')  #Used to Launch Programs Asynchronously
+    if simulate:
+        simulator(devnull, log)
+    controller = Leap.Controller()
+    wv = wave_obj(filename)
+    p = pyaudio.PyAudio()
+    data = wv.readframes(CHUNK)
+    tempo = wv.getframerate()
+    volume = 0
+    if controller.is_connected:
+        tempo = int(tracker.get_hand(controller, "Right", log) * wv.getframerate() // 6)
+        volume = tracker.get_hand(controller, "Left", log)
+        set_volume(volume, devnull, log)
+    stream = p.open(format=p.get_format_from_width(wv.getsampwidth()),
+                    channels=wv.getnchannels(),
+                    rate=tempo,
+                    output=True)
 
-if(controller.is_connected):
-    rt = int(trackPointer.getTempo(frames_played, controller)* wv.getframerate()//6)
-stream = p.open(format = p.get_format_from_width(wv.getsampwidth()),
-                channels = wv.getnchannels(),
-                rate = rt,
-                output=True)
-Popen(['nircmd.exe', 'setsysvolume', str(int(Left.getPitch(frm, controller)*65535/12))], stdout=devnull, stderr=devnull)
-print(rt)
+    while data != '':
+        prev_tempo = tempo
+        prev_volume = volume
+        if controller.is_connected:
+            tempo = int(tracker.get_hand(controller, "Right", log) * wv.getframerate() // 6)
+            volume = tracker.get_hand(controller, "Left", log)
+        if tempo != prev_tempo:
+            stream = p.open(format=p.get_format_from_width(wv.getsampwidth()),
+                            channels=wv.getnchannels(),
+                            rate=tempo,
+                            output=True)
+        if volume != prev_volume:
+            set_volume(volume, devnull, log)
+        stream.write(data)
+        data = wv.readframes(CHUNK)
+    stream.stop_stream()
+    stream.close()
 
-while data != '':
-    Popen(['nircmd.exe', 'setsysvolume', str(int(Left.getPitch(frm, controller)*65535/12))], stdout=devnull, stderr=devnull)
-    temp = rt
-    if(controller.is_connected):
-        temp = int(trackPointer.getTempo(frames_played, controller) * wv.getframerate()//6)
-        print(temp)
-    if temp != rt:
-        rt = temp
-        stream = p.open(format = p.get_format_from_width(wv.getsampwidth()),
-                channels = wv.getnchannels(),
-                rate = rt,
-                output=True)
-    
-    frames_played += CHUNK()
-    stream.write(data)
-    data = wv.readframes(CHUNK())
-
-stream.stop_stream()
-stream.close()
-
-p.terminate()
-
-print(str(frames_played))
-print("success!")
+    p.terminate()
