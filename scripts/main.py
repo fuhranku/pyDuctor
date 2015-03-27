@@ -68,6 +68,7 @@ def main(filename, log=False, simulate=False):
     if simulate:
         simulator(devnull, log)
     controller = Leap.Controller()
+    controller.set_policy(Leap.Controller.POLICY_BACKGROUND_FRAMES)
     wv = wave_obj(filename)
     p = pyaudio.PyAudio()
     data = wv.readframes(CHUNK)
@@ -101,3 +102,6 @@ def main(filename, log=False, simulate=False):
     stream.close()
 
     p.terminate()
+
+if __name__ == '__main__':
+    main("czardas.wav")
